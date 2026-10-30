@@ -259,11 +259,9 @@ footer {
         <h1>✚ TCU Smart Clinic</h1>
         <p>Administrator Dashboard</p>
     </div>
-
     <button id="logoutBtn" class="logout hidden">Log Out</button>
 </header>
 
-<!-- ADMIN LOGIN -->
 <section id="loginSection" class="login-box">
     <h2>Admin Login</h2>
     <p>Sign in using your authorized clinic administrator account.</p>
@@ -271,13 +269,13 @@ footer {
     <form id="loginForm">
         <label for="adminEmail">Admin Email</label>
         <input id="adminEmail" type="email"
-            placeholder="Enter admin email"
-            autocomplete="username" required>
+               placeholder="Enter admin email"
+               autocomplete="username" required>
 
         <label for="adminPassword">Password</label>
         <input id="adminPassword" type="password"
-            placeholder="Enter password"
-            autocomplete="current-password" required>
+               placeholder="Enter password"
+               autocomplete="current-password" required>
 
         <button id="loginBtn" class="primary" type="submit">
             Sign In
@@ -287,13 +285,11 @@ footer {
     <div id="loginMessage" class="notice hidden"></div>
 </section>
 
-<!-- ADMIN DASHBOARD -->
 <main id="dashboard" class="hidden">
 
     <section class="welcome">
         <h2>Appointment Management</h2>
         <p>Review student clinic appointment requests and monitor their status.</p>
-
         <div id="adminMessage" class="notice">
             Loading appointment requests...
         </div>
@@ -424,21 +420,20 @@ if (window.emailjs) {
     });
 
     emailConfigured = true;
-    console.log("EmailJS initialized successfully.");
+    console.log("EmailJS initialized.");
 } else {
     console.error("EmailJS library was not loaded.");
 }
 
 
 // ======================================
-// GET READABLE ERROR MESSAGE
+// ERROR MESSAGE HELPER
 // ======================================
 
 function getErrorMessage(error) {
 
     if (error?.text) return error.text;
     if (error?.message) return error.message;
-
     if (typeof error === "string") return error;
 
     try {
@@ -456,13 +451,13 @@ function getErrorMessage(error) {
 async function sendAppointmentEmail(appointment, status, queueNumber) {
 
     if (!emailConfigured || !window.emailjs) {
-        throw new Error("EmailJS library is not initialized.");
+        throw new Error("EmailJS is not initialized. Check the EmailJS library.");
     }
 
     const recipientEmail = String(appointment.email || "").trim();
 
     if (!recipientEmail) {
-        throw new Error("Student email is missing from Firestore.");
+        throw new Error("Student email is missing from the appointment record.");
     }
 
     const actualQueue =
@@ -489,11 +484,10 @@ async function sendAppointmentEmail(appointment, status, queueNumber) {
             : "Your clinic appointment request has been rejected. Please contact the clinic for more information."
     };
 
-    console.log("Email recipient:", recipientEmail);
+    console.log("Sending email to:", recipientEmail);
     console.log("Email parameters:", templateParams);
 
     try {
-
         const response = await window.emailjs.send(
             EMAILJS_SERVICE_ID,
             EMAILJS_TEMPLATE_ID,
@@ -509,16 +503,14 @@ async function sendAppointmentEmail(appointment, status, queueNumber) {
         return response;
 
     } catch (error) {
-
-        console.error("Full EmailJS error:", error);
-
+        console.error("EmailJS error details:", error);
         throw new Error(getErrorMessage(error));
     }
 }
 
 
 // ======================================
-// SEND EMAIL AND SAVE EMAIL STATUS
+// SEND EMAIL AND RECORD RESULT
 // ======================================
 
 async function sendAndRecordEmail(
@@ -552,23 +544,19 @@ async function sendAndRecordEmail(
 
     } catch (error) {
 
+        console.error("Email sending failed:", error);
+
         const errorMessage = getErrorMessage(error);
 
-        console.error("Email sending failed:", errorMessage);
-
         try {
-
             await updateDoc(appointmentRef, {
                 emailSent: false,
                 emailStatus: "Failed",
                 emailError: errorMessage,
                 emailAttemptedAt: serverTimestamp()
             });
-
         } catch (saveError) {
-
             console.error("Could not save email status:", saveError);
-
         }
 
         return {
@@ -609,7 +597,7 @@ function showMessage(element, message) {
 
 
 // ======================================
-// STOP DASHBOARD LISTENER
+// HIDE DASHBOARD
 // ======================================
 
 function hideDashboard() {
@@ -641,25 +629,21 @@ loginForm.addEventListener("submit", async (event) => {
     const password = document.getElementById("adminPassword").value;
 
     try {
-
         await signInWithEmailAndPassword(auth, email, password);
 
     } catch (error) {
 
-        console.error("Admin login error:", error);
+        console.error("Login error:", error);
 
         showMessage(
             loginMessage,
-            error.code + ": " + error.message
+            getErrorMessage(error)
         );
 
     } finally {
-
         loginBtn.disabled = false;
         loginBtn.textContent = "Sign In";
-
     }
-
 });
 
 
@@ -672,15 +656,13 @@ logoutBtn.addEventListener("click", async () => {
     try {
         await signOut(auth);
     } catch (error) {
-        console.error("Logout error:", error);
-        alert("Unable to log out: " + getErrorMessage(error));
+        alert("Logout failed: " + getErrorMessage(error));
     }
-
 });
 
 
 // ======================================
-// VERIFY ADMIN ACCOUNT
+// VERIFY ADMIN
 // ======================================
 
 onAuthStateChanged(auth, async (user) => {
@@ -701,7 +683,6 @@ onAuthStateChanged(auth, async (user) => {
         if (!adminSnapshot.exists()) {
 
             await signOut(auth);
-
             loginSection.classList.remove("hidden");
 
             showMessage(
@@ -723,34 +704,23 @@ onAuthStateChanged(auth, async (user) => {
         console.error("Admin verification error:", error);
 
         await signOut(auth);
-
         loginSection.classList.remove("hidden");
 
         showMessage(
             loginMessage,
             "Admin verification failed: " + getErrorMessage(error)
         );
-
     }
-
 });
 
 
 // ======================================
-// SEND OR RESEND EMAIL FOR OLD REQUESTS
+// SEND OR RESEND EMAIL
 // ======================================
 
 async function resendAppointmentEmail(item, button) {
 
     if (busyEmails.has(item.id)) return;
-
-    const actionText = item.emailSent ? "Resend" : "Send";
-
-    if (!confirm(
-        `${actionText} appointment notification to ${item.email}?`
-    )) {
-        return;
-    }
 
     busyEmails.add(item.id);
     button.disabled = true;
@@ -778,8 +748,16 @@ async function resendAppointmentEmail(item, button) {
             throw new Error("This appointment has not been reviewed yet.");
         }
 
-        if (!latestAppointment.email) {
+        const recipient = latestAppointment.email;
+
+        if (!recipient) {
             throw new Error("Student email is missing from Firestore.");
+        }
+
+        const action = latestAppointment.emailSent ? "Resend" : "Send";
+
+        if (!confirm(`${action} notification to ${recipient}?`)) {
+            return;
         }
 
         const result = await sendAndRecordEmail(
@@ -790,33 +768,24 @@ async function resendAppointmentEmail(item, button) {
         );
 
         if (result.success) {
-
-            alert(
-                "EmailJS accepted the notification for " +
-                latestAppointment.email
-            );
+            alert("EmailJS accepted the notification for " + recipient);
 
             showMessage(
                 adminMessage,
-                "Email notification accepted for " +
-                latestAppointment.email + "."
+                "Email notification accepted for " + recipient + "."
             );
-
         } else {
-
-            alert("Email failed: " + result.message);
+            alert("Email failed:\n" + result.message);
 
             showMessage(
                 adminMessage,
                 "Email sending failed: " + result.message
             );
-
         }
 
     } catch (error) {
 
-        console.error("Send/resend email error:", error);
-
+        console.error("Send/resend error:", error);
         alert("Unable to send email: " + getErrorMessage(error));
 
     } finally {
@@ -824,7 +793,6 @@ async function resendAppointmentEmail(item, button) {
         busyEmails.delete(item.id);
         button.disabled = false;
         button.textContent = item.emailSent ? "Resend Email" : "Send Email";
-
     }
 }
 
@@ -959,21 +927,11 @@ function listenForAppointments() {
                     rejectButton.className = "action-btn reject-btn";
 
                     approveButton.addEventListener("click", () =>
-                        updateAppointment(
-                            item,
-                            "Approved",
-                            approveButton,
-                            rejectButton
-                        )
+                        updateAppointment(item, "Approved", approveButton, rejectButton)
                     );
 
                     rejectButton.addEventListener("click", () =>
-                        updateAppointment(
-                            item,
-                            "Rejected",
-                            approveButton,
-                            rejectButton
-                        )
+                        updateAppointment(item, "Rejected", approveButton, rejectButton)
                     );
 
                     actionWrap.append(approveButton, rejectButton);
@@ -998,14 +956,9 @@ function listenForAppointments() {
                 row.appendChild(actionCell);
 
                 appointmentTable.appendChild(row);
-
             });
 
-            showMessage(
-                adminMessage,
-                "Appointment requests are up to date."
-            );
-
+            showMessage(adminMessage, "Appointment requests are up to date.");
         },
 
         (error) => {
@@ -1016,11 +969,8 @@ function listenForAppointments() {
                 adminMessage,
                 "Unable to load appointments: " + getErrorMessage(error)
             );
-
         }
-
     );
-
 }
 
 
@@ -1060,7 +1010,7 @@ async function updateAppointment(
         let assignedQueue = null;
         let appointmentData = null;
 
-        // SAVE STATUS AND QUEUE NUMBER FIRST
+        // SAVE APPOINTMENT FIRST
         await runTransaction(db, async (transaction) => {
 
             const appointmentSnapshot =
@@ -1080,10 +1030,9 @@ async function updateAppointment(
                 throw new Error("This appointment has already been reviewed.");
             }
 
-            appointmentData = current;
-
             let queueNumber = null;
 
+            // READ QUEUE COUNTER BEFORE WRITING
             if (newStatus === "Approved") {
 
                 const counterRef = doc(db, "settings", "queueCounter");
@@ -1098,15 +1047,14 @@ async function updateAppointment(
                 assignedQueue =
                     "Q" + String(nextNumber).padStart(3, "0");
 
+                queueNumber = assignedQueue;
+
                 transaction.set(counterRef, {
                     lastNumber: nextNumber,
                     updatedAt: serverTimestamp()
                 }, { merge: true });
-
-                queueNumber = assignedQueue;
             }
 
-            // Keep the latest appointment information for the email.
             appointmentData = {
                 ...current,
                 status: newStatus,
@@ -1121,10 +1069,9 @@ async function updateAppointment(
                 emailStatus: "Not sent",
                 emailError: ""
             });
-
         });
 
-        // SEND EMAIL AFTER FIRESTORE SAVES THE APPOINTMENT
+        // SEND EMAIL ONLY AFTER TRANSACTION SUCCEEDS
         const result = await sendAndRecordEmail(
             item.id,
             appointmentData,
@@ -1154,25 +1101,22 @@ async function updateAppointment(
 
             showMessage(
                 adminMessage,
-                resultMessage + " However, email failed: " + result.message
+                resultMessage + " Email failed: " + result.message
             );
 
             alert(
                 resultMessage +
                 "\n\nThe appointment was saved, but the email failed:\n" +
                 result.message +
-                "\n\nUse Send Email in the Actions column to try again."
+                "\n\nYou can use Send Email in the Actions column to try again."
             );
-
         }
 
     } catch (error) {
 
         console.error("Appointment update error:", error);
 
-        alert(
-            "Could not update appointment: " + getErrorMessage(error)
-        );
+        alert("Could not update appointment: " + getErrorMessage(error));
 
     } finally {
 
@@ -1180,9 +1124,7 @@ async function updateAppointment(
 
         approveButton.disabled = false;
         rejectButton.disabled = false;
-
     }
-
 }
 
 </script>
