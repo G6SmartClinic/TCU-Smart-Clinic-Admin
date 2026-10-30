@@ -418,16 +418,26 @@
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
-    // EMAILJS CONFIGURATION
+  
+// EMAILJS CONFIGURATION
 const EMAILJS_PUBLIC_KEY = "_uvQY8eNV2TgMcyyo";
 const EMAILJS_SERVICE_ID = "service_jbh4rxa";
 const EMAILJS_TEMPLATE_ID = "template_08zut0e";
 
+// Check if EmailJS is configured
+const emailConfigured = Boolean(
+    EMAILJS_PUBLIC_KEY &&
+    EMAILJS_SERVICE_ID &&
+    EMAILJS_TEMPLATE_ID
+);
+
+// Initialize EmailJS
 if (window.emailjs && emailConfigured) {
     window.emailjs.init({
         publicKey: EMAILJS_PUBLIC_KEY
     });
 }
+
 
 
     // YOUR FIREBASE CONFIGURATION
