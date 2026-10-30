@@ -352,7 +352,6 @@ footer {
 </footer>
 
 
-<!-- FIREBASE AND EMAILJS -->
 <script type="module">
 
 // ======================================
@@ -386,7 +385,6 @@ from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
 // ======================================
 // FIREBASE CONFIGURATION
-// SAME PROJECT AS STUDENT WEBSITE
 // ======================================
 
 const firebaseConfig = {
@@ -412,16 +410,91 @@ const EMAILJS_PUBLIC_KEY = "_uvQY8eNV2TgMcyyo";
 const EMAILJS_SERVICE_ID = "service_jbh4rxa";
 const EMAILJS_TEMPLATE_ID = "template_08zut0e";
 
-const emailConfigured = Boolean(
-    EMAILJS_PUBLIC_KEY &&
-    EMAILJS_SERVICE_ID &&
-    EMAILJS_TEMPLATE_ID
-);
+let emailConfigured = false;
 
-if (window.emailjs && emailConfigured) {
+if (window.emailjs) {
     window.emailjs.init({
         publicKey: EMAILJS_PUBLIC_KEY
     });
+
+    emailConfigured = true;
+    console.log("EmailJS initialized.");
+} else {
+    console.error("EmailJS library was not loaded.");
+}
+
+
+// ======================================
+// SEND EMAIL TO STUDENT
+// ======================================
+
+async function sendAppointmentEmail(appointment, status, queueNumber) {
+
+    if (!emailConfigured || !window.emailjs) {
+        throw new Error("EmailJS is not initialized. Check the EmailJS library and public key.");
+    }
+
+    const recipientEmail = appointment.email;
+
+    if (!recipientEmail) {
+        throw new Error("Student email is missing from the appointment record.");
+    }
+
+    const studentName =
+        appointment.patientName ||
+        appointment.fullName ||
+        "TCU Student";
+
+    const templateParams = {
+        to_email: recipientEmail,
+
+        student_name: studentName,
+
+        appointment_date:
+            appointment.appointmentDate || "Not specified",
+
+        appointment_time:
+            appointment.appointmentTime || "Not specified",
+
+        appointment_status: status,
+
+        queue_number:
+            status === "Approved"
+                ? queueNumber
+                : "Not applicable",
+
+        message:
+            status === "Approved"
+                ? `Your clinic appointment has been approved. Your queue number is ${queueNumber}.`
+                : "Your clinic appointment request has been rejected. Please contact the clinic for more information."
+    };
+
+    console.log("Sending email to:", recipientEmail);
+    console.log("Email template parameters:", templateParams);
+
+    try {
+
+        const response = await window.emailjs.send(
+            EMAILJS_SERVICE_ID,
+            EMAILJS_TEMPLATE_ID,
+            templateParams
+        );
+
+        console.log("Email sent successfully:", response);
+
+        return response;
+
+    } catch (error) {
+
+        console.error("EmailJS error:", error);
+
+        throw new Error(
+            error?.text ||
+            error?.message ||
+            error?.status ||
+            String(error)
+        );
+    }
 }
 
 
@@ -457,6 +530,7 @@ function showMessage(element, message) {
 // ======================================
 
 function hideDashboard() {
+
     if (stopListening) {
         stopListening();
         stopListening = null;
@@ -489,8 +563,6 @@ loginForm.addEventListener("submit", async (event) => {
 
         console.log("Firebase authentication successful.");
 
-        // onAuthStateChanged will verify the Admin UID.
-
     } catch (error) {
 
         console.error("Admin login error:", error);
@@ -517,10 +589,14 @@ loginForm.addEventListener("submit", async (event) => {
 logoutBtn.addEventListener("click", async () => {
 
     try {
+
         await signOut(auth);
+
     } catch (error) {
+
         console.error("Logout error:", error);
         alert("Unable to log out. Please try again.");
+
     }
 
 });
@@ -542,7 +618,6 @@ onAuthStateChanged(auth, async (user) => {
 
     try {
 
-        // Admin document ID must equal Firebase Auth UID.
         const adminRef = doc(db, "admins", user.uid);
         const adminSnapshot = await getDoc(adminRef);
 
@@ -560,7 +635,6 @@ onAuthStateChanged(auth, async (user) => {
             return;
         }
 
-        // ADMIN VERIFIED
         loginSection.classList.add("hidden");
         dashboard.classList.remove("hidden");
         logoutBtn.classList.remove("hidden");
@@ -601,6 +675,7 @@ function listenForAppointments() {
     );
 
     stopListening = onSnapshot(
+
         requestsQuery,
 
         (snapshot) => {
@@ -744,6 +819,7 @@ function listenForAppointments() {
             );
 
         }
+
     );
 
 }
@@ -785,10 +861,12 @@ async function updateAppointment(
         let assignedQueue = null;
         let appointmentData = null;
 
-        // UPDATE FIRESTORE TRANSACTION
+        // FIRESTORE TRANSACTION
         await runTransaction(db, async (transaction) => {
 
-            const appointmentSnapshot = await transaction.get(appointmentRef);
+            // GET APPOINTMENT
+            const appointmentSnapshot =
+                await transaction.get(appointmentRef);
 
             if (!appointmentSnapshot.exists()) {
                 throw new Error("Appointment no longer exists.");
@@ -808,26 +886,31 @@ async function updateAppointment(
 
             let queueNumber = null;
 
+            // ASSIGN QUEUE NUMBER ONLY IF APPROVED
             if (newStatus === "Approved") {
 
                 const counterRef = doc(db, "settings", "queueCounter");
-                const counterSnapshot = await transaction.get(counterRef);
+
+                const counterSnapshot =
+                    await transaction.get(counterRef);
 
                 const nextNumber = counterSnapshot.exists()
                     ? Number(counterSnapshot.data().lastNumber || 0) + 1
                     : 1;
+
+                assignedQueue =
+                    "Q" + String(nextNumber).padStart(3, "0");
 
                 transaction.set(counterRef, {
                     lastNumber: nextNumber,
                     updatedAt: serverTimestamp()
                 }, { merge: true });
 
-                queueNumber = "Q" + String(nextNumber).padStart(3, "0");
-
-                assignedQueue = queueNumber;
+                queueNumber = assignedQueue;
 
             }
 
+            // UPDATE APPOINTMENT
             transaction.update(appointmentRef, {
                 status: newStatus,
                 queueNumber: queueNumber,
@@ -836,8 +919,9 @@ async function updateAppointment(
 
         });
 
+        // FIRESTORE UPDATE SUCCESSFUL.
+        // SEND EMAIL ONLY AFTER THE TRANSACTION COMPLETES.
 
-        // SEND EMAIL AFTER FIRESTORE UPDATE
         let emailMessage = "";
 
         try {
@@ -879,78 +963,10 @@ async function updateAppointment(
 
         busyAppointments.delete(item.id);
 
+        approveButton.disabled = false;
+        rejectButton.disabled = false;
+
     }
-
-}
-
-
-// ======================================
-// EMAILJS - SEND DIRECTLY TO STUDENT
-// ======================================
-
-async function sendAppointmentEmail(
-    appointment,
-    status,
-    queueNumber
-) {
-
-    if (!emailConfigured || !window.emailjs) {
-        throw new Error("EmailJS is not initialized. Check your EmailJS public key and library.");
-    }
-
-    // GET STUDENT EMAIL FROM FIRESTORE
-    const recipientEmail = appointment.email;
-
-    if (!recipientEmail) {
-        throw new Error("Student email is missing from the appointment record.");
-    }
-
-    const studentName =
-        appointment.patientName ||
-        appointment.fullName ||
-        "TCU Student";
-
-    // EMAIL TEMPLATE VARIABLES
-    const templateParams = {
-
-        to_email: recipientEmail,
-
-        student_name: studentName,
-
-        appointment_date:
-            appointment.appointmentDate || "Not specified",
-
-        appointment_time:
-            appointment.appointmentTime || "Not specified",
-
-        appointment_status: status,
-
-        queue_number:
-            status === "Approved"
-                ? queueNumber
-                : "Not applicable",
-
-        message:
-            status === "Approved"
-                ? `Your clinic appointment has been approved. Your queue number is ${queueNumber}.`
-                : "Your clinic appointment request has been rejected. Please contact the clinic for more information."
-
-    };
-
-    // SEND EMAIL TO THE STUDENT'S EMAIL ADDRESS
-    const response = await window.emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
-        templateParams
-    );
-
-    console.log(
-        "Student email successfully sent:",
-        response.status,
-        response.text
-    );
-
-    return response;
 
 }
 
