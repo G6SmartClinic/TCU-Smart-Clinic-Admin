@@ -502,9 +502,13 @@ if (window.emailjs && emailConfigured) {
           document.getElementById("adminEmail").value.trim(),
           document.getElementById("adminPassword").value
         );
-      catch (error) {
-    console.error("Firebase Login Error:", error);
-    alert(error.code + ": " + error.message);
+     catch (error) {
+    console.error("Login error:", error);
+
+    showMessage(
+        loginMessage,
+        error.code + ": " + error.message
+    );
 }
         );
       } finally {
