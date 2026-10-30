@@ -495,11 +495,10 @@ emailjs.init({
           document.getElementById("adminEmail").value.trim(),
           document.getElementById("adminPassword").value
         );
-      } catch (error) {
-        console.error("Login error:", error);
-        showMessage(
-          loginMessage,
-          "Sign-in failed. Check your admin email and password."
+      catch (error) {
+    console.error("Firebase Login Error:", error);
+    alert(error.code + ": " + error.message);
+}
         );
       } finally {
         loginBtn.disabled = false;
