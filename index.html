@@ -423,10 +423,17 @@ const EMAILJS_PUBLIC_KEY = "_uvQY8eNV2TgMcyyo";
 const EMAILJS_SERVICE_ID = "service_jbh4rxa";
 const EMAILJS_TEMPLATE_ID = "template_08zut0e";
 
-// Initialize EmailJS
-emailjs.init({
-    publicKey: EMAILJS_PUBLIC_KEY
-});
+if (window.emailjs && emailConfigured) {
+    window.emailjs.init({
+        publicKey: EMAILJS_PUBLIC_KEY
+    });
+}
+
+    const emailConfigured = Boolean(
+    EMAILJS_PUBLIC_KEY &&
+    EMAILJS_SERVICE_ID &&
+    EMAILJS_TEMPLATE_ID
+);
 
 
     // YOUR FIREBASE CONFIGURATION
