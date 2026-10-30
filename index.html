@@ -101,7 +101,7 @@ input {
 
 main {
     width: 92%;
-    max-width: 1300px;
+    max-width: 1500px;
     margin: 35px auto;
 }
 
@@ -158,7 +158,7 @@ main {
 table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 1150px;
+    min-width: 1200px;
 }
 
 th, td {
@@ -431,30 +431,47 @@ if (window.emailjs) {
 
 
 // ======================================
+// GET READABLE ERROR MESSAGE
+// ======================================
+
+function getErrorMessage(error) {
+
+    if (error?.text) return error.text;
+    if (error?.message) return error.message;
+
+    if (typeof error === "string") return error;
+
+    try {
+        return JSON.stringify(error);
+    } catch {
+        return String(error);
+    }
+}
+
+
+// ======================================
 // SEND APPOINTMENT EMAIL
 // ======================================
 
 async function sendAppointmentEmail(appointment, status, queueNumber) {
 
     if (!emailConfigured || !window.emailjs) {
-        throw new Error("EmailJS is not initialized. Check the library and public key.");
+        throw new Error("EmailJS library is not initialized.");
     }
 
     const recipientEmail = String(appointment.email || "").trim();
 
     if (!recipientEmail) {
-        throw new Error("Student email is missing from the appointment record.");
+        throw new Error("Student email is missing from Firestore.");
     }
+
+    const actualQueue =
+        queueNumber || appointment.queueNumber || "Not assigned";
 
     const studentName =
         appointment.patientName ||
         appointment.fullName ||
         "TCU Student";
-
-    const actualQueue =
-        queueNumber ||
-        appointment.queueNumber ||
-        "Not assigned";
 
     const templateParams = {
         to_email: recipientEmail,
@@ -462,30 +479,41 @@ async function sendAppointmentEmail(appointment, status, queueNumber) {
         appointment_date: appointment.appointmentDate || "Not specified",
         appointment_time: appointment.appointmentTime || "Not specified",
         appointment_status: status,
+
         queue_number: status === "Approved"
             ? actualQueue
             : "Not applicable",
+
         message: status === "Approved"
             ? `Your clinic appointment has been approved. Your queue number is ${actualQueue}.`
             : "Your clinic appointment request has been rejected. Please contact the clinic for more information."
     };
 
-    console.log("Sending email to:", recipientEmail);
-    console.log("Template parameters:", templateParams);
+    console.log("Email recipient:", recipientEmail);
+    console.log("Email parameters:", templateParams);
 
-    const response = await window.emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
-        templateParams
-    );
+    try {
 
-    console.log("EmailJS response:", response);
+        const response = await window.emailjs.send(
+            EMAILJS_SERVICE_ID,
+            EMAILJS_TEMPLATE_ID,
+            templateParams
+        );
 
-    if (!response || response.status !== 200) {
-        throw new Error("EmailJS did not confirm the email request.");
+        console.log("EmailJS response:", response);
+
+        if (!response || response.status !== 200) {
+            throw new Error("EmailJS did not confirm the email request.");
+        }
+
+        return response;
+
+    } catch (error) {
+
+        console.error("Full EmailJS error:", error);
+
+        throw new Error(getErrorMessage(error));
     }
-
-    return response;
 }
 
 
@@ -502,38 +530,14 @@ async function sendAndRecordEmail(
 
     const appointmentRef = doc(db, "appointments", appointmentId);
 
-    // First, attempt to send the email.
-    let response;
-
     try {
-        response = await sendAppointmentEmail(
+
+        await sendAppointmentEmail(
             appointment,
             status,
             queueNumber
         );
-    } catch (error) {
 
-        console.error("EmailJS sending error:", error);
-
-        try {
-            await updateDoc(appointmentRef, {
-                emailSent: false,
-                emailStatus: "Failed",
-                emailError: error.message || String(error),
-                emailAttemptedAt: serverTimestamp()
-            });
-        } catch (saveError) {
-            console.error("Could not save failed email status:", saveError);
-        }
-
-        return {
-            success: false,
-            message: error.message || String(error)
-        };
-    }
-
-    // EmailJS accepted the email. Save that result separately.
-    try {
         await updateDoc(appointmentRef, {
             emailSent: true,
             emailStatus: "Sent",
@@ -543,17 +547,33 @@ async function sendAndRecordEmail(
 
         return {
             success: true,
-            message: "EmailJS accepted the email request.",
-            response: response
+            message: "EmailJS accepted the email request."
         };
 
-    } catch (saveError) {
+    } catch (error) {
 
-        console.error("Email was accepted but status could not be saved:", saveError);
+        const errorMessage = getErrorMessage(error);
+
+        console.error("Email sending failed:", errorMessage);
+
+        try {
+
+            await updateDoc(appointmentRef, {
+                emailSent: false,
+                emailStatus: "Failed",
+                emailError: errorMessage,
+                emailAttemptedAt: serverTimestamp()
+            });
+
+        } catch (saveError) {
+
+            console.error("Could not save email status:", saveError);
+
+        }
 
         return {
-            success: true,
-            message: "EmailJS accepted the email, but Firestore could not save its email status."
+            success: false,
+            message: errorMessage
         };
     }
 }
@@ -621,7 +641,9 @@ loginForm.addEventListener("submit", async (event) => {
     const password = document.getElementById("adminPassword").value;
 
     try {
+
         await signInWithEmailAndPassword(auth, email, password);
+
     } catch (error) {
 
         console.error("Admin login error:", error);
@@ -632,8 +654,10 @@ loginForm.addEventListener("submit", async (event) => {
         );
 
     } finally {
+
         loginBtn.disabled = false;
         loginBtn.textContent = "Sign In";
+
     }
 
 });
@@ -649,7 +673,7 @@ logoutBtn.addEventListener("click", async () => {
         await signOut(auth);
     } catch (error) {
         console.error("Logout error:", error);
-        alert("Unable to log out. Please try again.");
+        alert("Unable to log out: " + getErrorMessage(error));
     }
 
 });
@@ -677,6 +701,7 @@ onAuthStateChanged(auth, async (user) => {
         if (!adminSnapshot.exists()) {
 
             await signOut(auth);
+
             loginSection.classList.remove("hidden");
 
             showMessage(
@@ -698,11 +723,12 @@ onAuthStateChanged(auth, async (user) => {
         console.error("Admin verification error:", error);
 
         await signOut(auth);
+
         loginSection.classList.remove("hidden");
 
         showMessage(
             loginMessage,
-            "Admin verification failed: " + error.message
+            "Admin verification failed: " + getErrorMessage(error)
         );
 
     }
@@ -718,8 +744,10 @@ async function resendAppointmentEmail(item, button) {
 
     if (busyEmails.has(item.id)) return;
 
+    const actionText = item.emailSent ? "Resend" : "Send";
+
     if (!confirm(
-        `Send an appointment notification to ${item.email}?`
+        `${actionText} appointment notification to ${item.email}?`
     )) {
         return;
     }
@@ -770,7 +798,8 @@ async function resendAppointmentEmail(item, button) {
 
             showMessage(
                 adminMessage,
-                "Email notification accepted for " + latestAppointment.email + "."
+                "Email notification accepted for " +
+                latestAppointment.email + "."
             );
 
         } else {
@@ -786,14 +815,15 @@ async function resendAppointmentEmail(item, button) {
 
     } catch (error) {
 
-        console.error("Resend email error:", error);
-        alert("Unable to send email: " + error.message);
+        console.error("Send/resend email error:", error);
+
+        alert("Unable to send email: " + getErrorMessage(error));
 
     } finally {
 
         busyEmails.delete(item.id);
         button.disabled = false;
-        button.textContent = "Send Email";
+        button.textContent = item.emailSent ? "Resend Email" : "Send Email";
 
     }
 }
@@ -984,7 +1014,7 @@ function listenForAppointments() {
 
             showMessage(
                 adminMessage,
-                "Unable to load appointments: " + error.message
+                "Unable to load appointments: " + getErrorMessage(error)
             );
 
         }
@@ -1054,7 +1084,6 @@ async function updateAppointment(
 
             let queueNumber = null;
 
-            // ASSIGN QUEUE NUMBER ONLY IF APPROVED
             if (newStatus === "Approved") {
 
                 const counterRef = doc(db, "settings", "queueCounter");
@@ -1077,6 +1106,13 @@ async function updateAppointment(
                 queueNumber = assignedQueue;
             }
 
+            // Keep the latest appointment information for the email.
+            appointmentData = {
+                ...current,
+                status: newStatus,
+                queueNumber: queueNumber
+            };
+
             transaction.update(appointmentRef, {
                 status: newStatus,
                 queueNumber: queueNumber,
@@ -1088,7 +1124,7 @@ async function updateAppointment(
 
         });
 
-        // SEND EMAIL AFTER FIRESTORE UPDATE
+        // SEND EMAIL AFTER FIRESTORE SAVES THE APPOINTMENT
         const result = await sendAndRecordEmail(
             item.id,
             appointmentData,
@@ -1104,7 +1140,8 @@ async function updateAppointment(
 
             showMessage(
                 adminMessage,
-                resultMessage + " EmailJS accepted the notification for " + appointmentData.email + "."
+                resultMessage + " EmailJS accepted the notification for " +
+                appointmentData.email + "."
             );
 
             alert(
@@ -1124,8 +1161,9 @@ async function updateAppointment(
                 resultMessage +
                 "\n\nThe appointment was saved, but the email failed:\n" +
                 result.message +
-                "\n\nYou can click Send Email in the Actions column to try again."
+                "\n\nUse Send Email in the Actions column to try again."
             );
+
         }
 
     } catch (error) {
@@ -1133,7 +1171,7 @@ async function updateAppointment(
         console.error("Appointment update error:", error);
 
         alert(
-            "Could not update appointment: " + error.message
+            "Could not update appointment: " + getErrorMessage(error)
         );
 
     } finally {
